@@ -1,0 +1,192 @@
+#Блек-Джек
+#от 1 до 7 игроков против дилера
+
+#Раздать игрокам и дилеру по 2 карты
+#для каждого игрока:
+#   пока игрок просит карты и не перебрал
+#       сдавать по одной карте
+#если не осталось игроков
+#   открыть 2 карты дилера
+#Иначе
+#   пока дилер долж. сдавать себе по одной и не перебрал
+#       сдавать дилеру по одной карте
+#   Если  дилер перебрал
+#       для каждого игрока, оставшегося в игре
+#           этот игрок побеждает
+#   Иначе
+#       для каждого игрока, оставшегося в игре
+#           если у игрока больше чем у дилера
+#               этот игрок побеждает
+#           Иначе, если у игрока меньше
+#               этот игрок проигрывает
+#           Иначе
+#               этот игрок сыграл с компом вничью
+
+import cards, games
+
+class BJ_Karty(cards.Karty):
+    '''Карта для игры Блек-Джек'''
+    ACE_VALUE = 1
+
+    @property
+    def value(self):
+        if self.is_face_up:
+            v = BJ_Karty.RANGI.index(self.rang)+1
+            if v>10:
+                v=10
+        else:
+            v=None
+        return v
+
+class BJ_Koloda(cards.Koloda):
+    '''Колода для игры в Блек-Джек.'''
+    def populate(self):
+        for mast in BJ_Karty.MAST:
+            for rang in BJ_Karty.RANGI:
+                self.cards.append(BJ_Karty(rang,mast))
+
+class BJ_Ryka(cards.Ryka):
+    '''Набор карт Блек-Джека у одного игрока.'''
+    def __init__(self,name):
+        super(BJ_Ryka,self).__init__()
+        self.name=name
+    def __str__(self):
+        karti = self.name + ':\t' + super(BJ_Ryka,self).__str__()
+        if self.total:
+            karti += '('+str(self.total)+')'
+        return karti
+
+    @property
+    def total(self):
+        #если у одной из карт value=None, то total=None
+        for card in self.cards:
+            if not card.value:
+                return None
+        #суммируем очки, считая туз за одно очко
+        t=0
+        for card in self.cards:
+            t += card.value
+        #определяем, есть ли туз на руках у игрока
+        contains_ace = False
+        for card in self.cards:
+            if card.value==BJ_Karty.ACE_VALUE:
+                contains_ace=True
+        #если на руках есть туз и сумма очков не превышает 11, то туз=11
+        if contains_ace and t<=11:
+            #прибавляем 10, т.к. единица уже посчитана
+            t+=10
+        return t
+
+    def is_perebral(self):
+        return self.total > 21
+
+class BJ_Player(BJ_Ryka):
+    '''Игрок в Блек-Джек.'''
+    def is_is4o(self):
+        response=games.ask_yes_no('\n'+self.name+', ещё? (y/n): ')
+        return response == 'y'
+    def perebor(self):
+        print(self.name,' перебрал.')
+        self.lose()
+    def lose(self):
+        print(self.name,' проиграл.')
+    def win(self):
+        print(self.name,' выиграл.')
+    def ni4ya(self):
+        print(self.name,' сыграл с компом вничью.')
+
+class BJ_Dealer(BJ_Ryka):
+    '''Дилер в Блек-Джеке.'''
+    def is_is4o(self):
+        return self.total < 17
+    def perebor(self):
+        print(self.name,' перебрал.')
+    def perevert_first_card(self):
+        first_card=self.cards[0]
+        first_card.perevert()
+
+class BJ_Game(object):
+    '''Игра в Блек-Джек'''
+    def __init__(self,names):
+        self.players=[]
+        for name in names:
+            player=BJ_Player(name)
+            self.players.append(player)
+        self.dealer=BJ_Dealer('Dealer')
+        self.koloda=BJ_Koloda()
+        self.koloda.populate()
+        self.koloda.tasovanie()
+
+    @property
+    def still_playing(self):
+        sp=[]
+        for player in self.players:
+            if not player.is_perebral():
+                sp.append(player)
+            return sp
+        
+    def __additional_cards(self,player):
+        while not player.is_perebral() and player.is_is4o():
+            self.koloda.deal([player])
+            print(player)
+            if player.is_perebral():
+                player.perebor()
+
+    def play(self):
+        #сдача всем по две карты
+        self.koloda.deal(self.players + [self.dealer],per_hand=2)
+        self.dealer.perevert_first_card() #переворачиваем одну карту дилера
+        for player in self.players:
+            print(player)
+        print(self.dealer)
+        #сдача дополнительных карт игрокам
+        for player in self.players:
+            self.__additional_cards(player)
+        self.dealer.perevert_first_card() #первая карта дилера открывается
+        if not self.still_playing:
+            #если все игроки перебрали, то откроем только "руку" дилера
+            print(self.dealer)
+        else:
+            #сдача дополнительных карт дилеру
+            print(self.dealer)
+            self.__additional_cards(self.dealer)
+            if self.dealer.is_perebral():
+                #выигрывают все, кто остался в игре
+                for player in self.still_playing:
+                    player.win()
+            else:
+                #сравниваем очки дилера и игроков
+                for player in self.still_playing:
+                    if player.total > self.dealer.total:
+                        player.win()
+                    elif player.total < self.dealer.total:
+                        player.lose()
+                    else:
+                        player.ni4ya()
+
+        #удаляем карты
+        for player in self.players:
+            player.clear()
+        self.dealer.clear()
+        
+def main():
+    print('\t\tПривет, это Блек-Джек.\n')
+
+    names=[]
+    number=games.ask_number('Скока игороков будет? (1-7): ',low=1,high=8)
+    for i in range(number):
+        name=input('Введи имя игрока: ')
+        names.append(name)
+        print()
+
+    game=BJ_Game(names)
+
+    again=None
+    while again != 'n':
+        game.play()
+        again=games.ask_yes_no('\nЕщё играем? (y/n)')
+
+main()    
+
+
+input('\nEnter')
